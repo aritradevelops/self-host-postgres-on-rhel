@@ -1,11 +1,12 @@
-
 ## Self-Hosting PostgreSQL on RHEL with Docker and Nginx Reverse Proxy
 
 Learn how to set up PostgreSQL in a Docker container on a RHEL VM, configure Nginx as a reverse proxy, and make your database accessible from another machine securely. This guide covers each step from creating a Docker Compose setup for PostgreSQL to configuring firewalls and security settings.
 
 ### Prerequisites
 
-- **Docker** installed on the RHEL VM.
+- **Docker** installed on the RHEL VM.  
+  You can follow the official Docker documentation for installation on RHEL:  
+  👉 [Install Docker Engine on RHEL](https://docs.docker.com/engine/install/rhel/)
 
 ### Steps
 
@@ -29,7 +30,9 @@ Learn how to set up PostgreSQL in a Docker container on a RHEL VM, configure Ngi
 
    Add the following configuration to the `docker-compose.yml` file:
 
-   ```yml
+   ```yaml
+   version: '3.9'
+
    services:
      postgres:
        image: postgres:latest
@@ -42,11 +45,8 @@ Learn how to set up PostgreSQL in a Docker container on a RHEL VM, configure Ngi
          - "5432:5432"
        volumes:
          - pgdata:/var/lib/postgresql/data
-       deploy:
-         resources:
-           limits:
-             cpus: '1.5'  # Limit to 1.5 CPUs out of 2
-             memory: 3g   # Limit memory usage to 3 GB out of 4 GB
+       mem_limit: 3g      # Limit memory usage to 3 GB
+       cpus: 1.5          # Limit to 1.5 CPUs
 
    volumes:
      pgdata:
@@ -65,13 +65,15 @@ Learn how to set up PostgreSQL in a Docker container on a RHEL VM, configure Ngi
    sudo firewall-cmd --add-port=9856/tcp --permanent
    ```
 
-4. ### Enable Network Connections for Nginx
+4. ### Enable Network Connections for Nginx (TCP Streams)
 
-   By default, SELinux restricts web server processes (like Nginx) from making network connections. Run the following command to enable network connections:
+   Since we’re using Nginx’s **TCP stream module**, we need to adjust SELinux settings to allow such connections. Run the following command:
 
    ```bash
-   sudo setsebool -P httpd_can_network_connect 1
+   sudo setsebool -P nis_enabled 1
    ```
+
+   > This enables the `nis_enabled` boolean, which allows services like Nginx to establish outbound TCP connections — necessary for proxying PostgreSQL connections.
 
 5. ### Reload the Firewall
 
@@ -83,13 +85,13 @@ Learn how to set up PostgreSQL in a Docker container on a RHEL VM, configure Ngi
 
 6. ### Start PostgreSQL with Docker Compose
 
-   Bring up the PostgreSQL container in detached mode.
+   Bring up the PostgreSQL container in detached mode using the Docker Compose **plugin** (note the space between `docker` and `compose`):
 
    ```bash
-   sudo docker-compose up -d
+   sudo docker compose up -d
    ```
 
-   This command will download the PostgreSQL image (if not already downloaded), create the container, and start it in the background.
+   > This command uses the Docker Compose plugin (recommended for modern Docker installations) to start the PostgreSQL container in the background.
 
 7. ### Access PostgreSQL
 
@@ -113,11 +115,11 @@ Learn how to set up PostgreSQL in a Docker container on a RHEL VM, configure Ngi
 
    Nginx can act as a reverse proxy, forwarding requests on port 9856 to PostgreSQL’s port 5432.
 
-   - Create a configuration file for the proxy setup:
+   - Create a configuration file for the proxy setup using `sudo` to ensure proper permissions:
 
      ```bash
-     touch /usr/share/nginx/modules/posgres.conf
-     sudo vi /usr/share/nginx/modules/posgres.conf
+     sudo touch /usr/share/nginx/modules/postgres.conf
+     sudo vi /usr/share/nginx/modules/postgres.conf
      ```
 
    - Add the following configuration:
@@ -132,8 +134,6 @@ Learn how to set up PostgreSQL in a Docker container on a RHEL VM, configure Ngi
      }
      ```
 
-   - This configuration tells Nginx to listen on port 9856 and forward traffic to `localhost:5432` (PostgreSQL’s port within the VM).
-
 10. ### Restart Nginx
 
     Apply the new configuration by restarting Nginx:
@@ -144,11 +144,13 @@ Learn how to set up PostgreSQL in a Docker container on a RHEL VM, configure Ngi
 
 11. ### Test the Connection
 
-    Verify that Nginx is successfully forwarding requests by using `nc` (netcat) from another machine or your VM.
+    Verify that Nginx is successfully forwarding requests by using `nc` (netcat) from another machine or your VM:
 
     ```bash
-    nc -vz 10.0.0.132 9856
+    nc -vz <your_private_ip> 9856
     ```
+
+    > Replace `<your_private_ip>` with the actual private IP address of your RHEL VM. This command will check if the connection to the PostgreSQL service is being forwarded correctly through Nginx.
 
 12. ### Open Port 9856 in VM's Security Settings
 
@@ -167,5 +169,3 @@ Learn how to set up PostgreSQL in a Docker container on a RHEL VM, configure Ngi
 ### Summary
 
 With these steps, you have successfully set up a PostgreSQL database in a Docker container on RHEL, configured Nginx as a reverse proxy to forward external traffic, and opened necessary ports. This setup ensures that your database is accessible securely and can handle incoming connections from other machines on the network.
-
-```
